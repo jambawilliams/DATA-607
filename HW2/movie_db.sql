@@ -1,4 +1,4 @@
-
+/*First create a database via CREATE DATABASE, PGAdmin GUI or other means*/
 
 CREATE table movies(
 	movie_id SERIAL PRIMARY KEY NOT NULL,
