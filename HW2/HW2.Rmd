@@ -1,0 +1,94 @@
+---
+title: 'DATA 607 HW2: SQL and R'
+author: "Michael Munguia"
+date: "2/9/2020"
+output: pdf_document
+params:
+  user:
+    label: "Please enter your username"
+    value: ""
+  pwd:
+    label: "Please enter your password"
+    value: ""
+    input: password
+  host:
+    label: "Please enter the host address"
+    value: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(DBI)
+```
+
+## Introduction
+
+The assignment can be split into two parts: creating a SQL database and then loading its contents into R. I decided to use Postgresql for the SQL-portion of my work, specifically using PGAdmin 4 as my management tool. After executing the query `CREATE DATABASE movie_db;` I connected to the newly minted `movie_db` database. From there, I executed the SQL code linked [here](https://raw.githubusercontent.com/mijomu/DATA-607/master/HW1/transfers.csv).
+
+## Connecting to the Database
+In order to load the data with R, I opted keep the server running and employing the DBI and RPostgres libraries to load the data in as a dataframe. In order to keep my connection parameters private, I created a seperate script to handle this. The basic scripting, however, is shown below. Running a line like below creates a connection object that is then passable to various other functions within the `DBI` library.
+```{r}
+connection <- dbConnect(RPostgres::Postgres(), dbname = "movie_db",
+                        host = params$host, user = params$user, password = params$pwd)
+```
+
+## Exploring the database
+The database I created consists of three tables: `viewers`, `ratings` and `movies`. We can see this using `DBI::dbListTables`.
+``` {r}
+(db_tables <- dbListTables(connection))
+```
+
+Knowing the table names is helpful, as now we can see what columns are available on each table more readily. In this case, corresponding columns have the same name and so it is easy to discern what to use for future joins. Using `purrr::map`, I can succinctly create a list of named references to each table's column names.
+```{r}
+map(db_tables, dbListFields, conn = connection) %>%
+  setNames(db_tables)
+```
+
+## Extracting the data
+After creating a character vector representing a simple select statement for each table named above, I can create a list containing a dataframe for each individual table. I opted to pass each to `dplyr::as.tbl` for better formatting. How practical or advisable creating a series of select statements in this way is questionable, but in the case of this relatively small and straightforward example this strategy works.
+```{r}
+select_statements <- paste0("SELECT * FROM ", db_tables)
+table_data <- map(select_statements, ~ as.tbl(dbGetQuery(connection, .x))) %>%
+  setNames(db_tables)
+
+table_data
+```
+
+As we can see above, each table contains a primary key consisting of a unique ID representing each entity described in a single row of the given table (a single viewer, a single movie, a single rating). Some extra data was collected about the viewers (age, sex) and movies (release year). In the case of ratings, there was very mixed viewership across the friends/family I asked to rate the six given movies and movies not watched by a viewer are represented by a null value in the `rating` column.  
+
+At this point, we can either work with the list of dataframes generated in the last chunk or we can simply write a slightly more complex query to load all the data. Both options are shown below. In either case, we're done with the database for now, so we can (and should) disconnect.
+```{r}
+df1 <- table_data$ratings %>% 
+  left_join(table_data$movies, by = "movie_id") %>% 
+  left_join(table_data$viewers, by = "viewer_id")
+
+df2 <- as.tbl(dbGetQuery(connection, "
+                         SELECT a.*, b.title, release_year, c.age, sex
+                         FROM ratings a
+                         LEFT JOIN movies b ON a.movie_id = b.movie_id
+                         LEFT JOIN viewers c ON a.viewer_id = c.viewer_id;"))
+
+dbDisconnect(connection)
+```
+
+## Using the data
+Now that the data is accessible in a dataframe, we can explore it in the usual way we would any other data in R. For example, we could calculate average ratings by viewers' sex (keeping in mind to set `na.rm = TRUE` as the database contains missing values where a viewer did not report a rating).
+```{r}
+df2 %>% 
+  group_by(sex) %>% 
+  summarize_at("rating", mean, na.rm = TRUE)
+```
+
+While there is not a huge amount of data to work with, we could for see what the current top 3 films were among the friend/family group surveyed:
+```{r}
+df2 %>%
+  group_by(title) %>%
+  summarize_at("rating", mean, na.rm = TRUE) %>%
+  arrange(desc(rating)) %>% 
+  head(3)
+```
+
+## Conclusion
+
+There are many different ways to access data from a database through R and this document shows just a few of the ways to do so. Where access to the database itself is not readily available to the analyst, .csv files can serve as an intermediary between the database and R and can be created either through SQL query or through the management GUI in use. With more time spent on the project, this could fan out into a Shiny app to compile friends' movie preferences and help me cut through the chaff and catch the films that matter. Giving users the ability to add or update ratings would make the any analytic work more meaningful than it might currently be at only six movies across six viewers.
