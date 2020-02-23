@@ -1,0 +1,116 @@
+---
+title: "DATA 607 - Project 1"
+author: "Michael Munguia"
+date: "2/22/2020"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The goal of this assignment was to take a text file containing player score data from a chess tournament, in a specific format, and manipulate it into a shape more readily usable for data analysis or creation of a SQL table.
+
+## Creating a function
+
+To do this, I loaded the tidyverse library (in order to make use of piping and the more standardized stringr functions) and then wrote a function in the style of a readr "read_" functions. In brief, the function stores each line of the file as an element of character vector. From there, the sequencing of the data is used to subset two distinct character vectors which are then referenced as elements of a list. A series of regular expressions are used to output new character vectors that are fed directly into the named variables of a new dataframe.  
+
+Now that data for the player `id`, `name`, `state`, `points` and Pre-Rank `rating` have been stored as a dataframe, they are all stored as characters. Each is trimmed to remove excess whitespace (more a safety measure than anything) and the Pre-Rank `rating` and `points` are converted to integer and double types respectively. The end result is reformatted as a tibble for better display.
+
+At this point, a list of character vectors representing each player's opponents is extracted via regular expression and the map function is used to trim the results. The resulting list is passed to the nested `opponent_means` function, along with the now tidy dataframe, and a rating guide is created that indexes each rating by their id (as a character). Using the character vectors for each opponent referenced in the list, we can subset their ratings as a vector and calculate the mean.
+
+The end results are stored as their own integer vector and this is bound as a column to the existing tidy dataframe. As it was not part of the requirements, the ID is dropped and, if passed, user-defined column names are set to the dataframe.
+```{r eval=TRUE, echo=TRUE, linewidth=90}
+suppressMessages(library(tidyverse))
+
+
+read_elo <- function(file_name, column_names = NA, skip = NA) {
+  # This function will take data formatted as per project parameters, generating a tidy,
+  # analysis/SQL-ready dataframe for export as a CSV.
+  opponent_means <- function(tidy_df, opponents_list) {
+    # This function serves to generate a rating guide for each player
+    # and use it to calculate average opponent ratings.
+    rating_guide <- tidy_df$rating
+    names(rating_guide) <- tidy_df$id
+    
+    # A vector of player IDs serves as a subset for extracting ratings for calculation.
+    averages <- integer()
+    for (i in seq_len(length(opponents_list))) {
+      opponents <- opponents_list[[i]]
+      averages[i] <- as.integer(mean(rating_guide[opponents]))
+    }
+
+    return(averages)
+  }
+  
+  # Minimal handling for additional/missing headers is included.
+  skip <- if(is.na(skip)) {1} else {skip}
+  file_content <- readLines(file_name, warn = FALSE)
+  file_length <- length(file_content)
+  
+  # A single player's data appears across two meaningful lines of content,
+  # so treating each independently seems to simplify the problem.
+  primary_sequence <- seq(skip, file_length, 3)
+  secondary_sequence <- seq(skip + 1, file_length, 3)
+  
+  rexp <- c("id" = "(?<=^)\\s*\\d+(?=|)",
+            "name" = "(?<=.{7}).+(?=\\s\\|\\d)",
+            "state" = "[A-Z]{2}(?=\\s|)",
+            "points" = "\\d\\.\\d",
+            "ratings" = "(?<=R:\\s{1,3})\\d+(?=[P\\s])",
+            "op" = "(?<=[WLD])\\s*\\d+(?=|)")
+  
+  content_list <- list(file_content[primary_sequence], file_content[secondary_sequence])
+  result <- data.frame(id = str_extract(content_list[[1]], rexp["id"]),
+                       name = str_extract(content_list[[1]], rexp["name"]),
+                       state = str_extract(content_list[[2]], rexp["state"]),
+                       points = str_extract(content_list[[1]], rexp["points"]),
+                       rating = str_extract(content_list[[2]], rexp["ratings"]),
+                       stringsAsFactors = FALSE)
+  
+  # For data like player names, rather than try to predict naming conventions,
+  # whatever falls in the initial brackets is extracted.
+  # Other data is more specifically handled.
+  # The results are trimmed of whitespace before conversion to more meaningful data types.
+  
+  result <- result %>%
+    mutate_at(c("id", "name", "state", "points", "rating"), str_trim) %>%
+    mutate_at(c("rating"), as.integer) %>%
+    mutate_at(c("points"), as.double) %>%
+    as.tbl()
+  
+  # Now that the data is in a tidy dataframe, opponent IDs are
+  # extracted via regular expression
+  # by matching those associated with Wins, Losses and Draws.
+  # An integer vector of average ratings for players' opponents
+  # is generated and merged to the existing tidy dataframe.
+  extracted_opponents <- map(str_extract_all(content_list[[1]], rexp["op"]), str_trim)
+  average_ratings <- opponent_means(result, extracted_opponents)
+  
+  result <- bind_cols(result, "opponentAvg" = average_ratings) %>% 
+    select(-id)
+  
+  if (!is.na(column_names)) {colnames(result) <- column_names}
+  
+  return(result)
+  
+}
+```
+
+## Running the function
+
+Reading the data from the file hosted in my github respository for this project, we simply run the function and store the resulting dataframe/tibble. Placing that call in parenthesis, we also see the first few rows in a neat/readable display. Finally, the dataframe is passed to the `write_csv` function along with a filename to generate a file in the same directory as the .Rmd.
+```{r, eval=TRUE, linewidth=90}
+project_repo <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project%201/"
+(tournament_df <- read_elo(paste0(project_repo, "tournamentinfo.txt"), skip = 5))
+write_csv(tournament_df, "tournament_info.csv")
+```
+
+## Conclusion
+
+At this point, the file could then be used for data analysis or uploaded to a relational database table through SQL. 
