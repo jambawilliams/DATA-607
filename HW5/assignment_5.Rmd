@@ -3,8 +3,8 @@ title: "DATA 607 - Week 5 Assignment"
 author: "Michael Munguia"
 date: "February 24, 2020"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -46,7 +46,7 @@ tidy_flights <- function(df) {
 
 I'll walk through my process in the subsequent chunks, detailing each step blow by blow.
 
-### Filtering unnecessary rows
+## Filtering unnecessary rows
 
 Having loaded the data into a tibble/dataframe, I pipe this to the `filter` function to exclude rows with a NA value in `X2`. Given the original format of the data, this means we are removing the blank line that separates the two tables representing each airline's arrivals data. When piping, it is much more readable to keep each "movement" on its own line(s) so that the procedure flows logically top to bottom, left to right.
 
@@ -55,7 +55,7 @@ flights %>%
   filter(!is.na(X2))
 ```
 
-### Filling missing values
+## Filling missing values
 
 Now that we have that gone, we want to finish filling out the values for `X1` and do so by piping the filtered results to the `fill` function. Specificying "down" for the `.direction` argument, this fills any missing value with whatever value is above it. Hence, filling down.
 
@@ -65,7 +65,7 @@ flights %>%
   fill(X1, .direction = "down")
 ```
 
-### Naming unnamed columns
+## Naming unnamed columns
 
 From here, piping to the `rename` function, the two initial columns (`X1` and `X2`) are renamed to `airline` and `status`.
 
@@ -76,7 +76,7 @@ flights %>%
   rename("airline" = "X1", "status" = "X2")
 ```
 
-### Restructuring arrival columns
+## Restructuring arrival columns
 
 Finally, the results are piped to the `pivot_longer` function. Here we ignore the `airline` and `status` columns and focus on the rest. Each
 remaining column is named for a destination and contains a numeric value describing the number of arrivals. To make this tidy, we need to ensure that
@@ -97,7 +97,7 @@ Now that we've walked through the process, I call the `tidy_flights` function to
 flights <- tidy_flights(flights)
 ```
 
-## Analyzing the flights data
+# Analyzing the flights data
 
 Now that the data is in a tidy format, we can readily do grouped aggregates and start to get a sense of how airline arrivals compare. Using the combination of `group_by` and one of the `summarize` series of functions, we can quickly see the total flights by status for each airline. We can see Alaska has 286 fewer delays, however, they have `6438+787 - 501+3274` fewer flights overall than AM West. As a whole, AM West may be overrepresented in the data such that any conclusions drawn would not be definitive. 
 
