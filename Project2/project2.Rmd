@@ -1,0 +1,291 @@
+---
+title: "DATA 607 - Project 2"
+author: "Michael Munguia"
+date: "3/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+repo_loc <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project2/"
+pc_loc <- "C:/Users/neapo/Desktop/School/DATA 607/Project 2/"
+```
+
+# Intro
+
+In this project, I have selected three different data sets identified by my peers and will transform them to conduct analyses recommended by them. Since the focus is more the actual data manipulation, and to make things more succinct downstream, I am writing the following function to help streamline group aggregation.
+
+```{r, eval=TRUE}
+group_aggregate <- function(df, group_vars, agg_vars, agg_func) {
+  result <- group_by_at(df, group_vars) %>% 
+    summarize_at(agg_vars, agg_func, na.rm = TRUE)
+  
+  if (length(group_vars) > 1) {result <- result %>% ungroup()}
+  return(result)
+}
+```
+
+# Data Set #1: Regional Marriage Statistics
+
+This data set contains national marriage rates for the U.S. across a span of several years. The data comes in two forms: one detailing regional census areas and the other detailing the 50 states and District of Columbia. This came in an Excel file and a CSV file, but I simply saved the Excel file as a CSV because of issues loading from github.
+
+## Loading data
+
+In this case, loading the data is relatively simple.
+
+```{r, eval=TRUE}
+by_state <- readr::read_csv(paste0(repo_loc, "state_marriage.csv"))
+colnames(by_state)[1] <- "state"
+
+by_div <- readr::read_csv(paste0(repo_loc, "Census%20Region.csv"))
+```
+
+## Reformatting the data
+
+While nice for a presentation-style, this format is not extremely helpful for analysis. We tidy the data by pivoting both to a longer structure. In this case, an observation in either data frame would represent marriage rates for a particular year in that particular state/region. In the case of the state dataframe, I rename one column to maintain a similar naming convention across them.
+
+```{r, eval=TRUE}
+by_state <- by_state %>% pivot_longer(cols = -state, names_to = "year", values_to = "rate") %>% mutate_at("year", as.double)
+by_div <- by_div %>% pivot_longer(cols = -year, names_to = "region", values_to = "rate")
+```
+
+## Exploring the data
+
+No other major work is necessary for this data to conduct some analysis. Below, we can observe the change of marriage rates by census region by visualizing the newly tidied data. We can see a general decline in marriage rates since 2000 with the West having experienced the greatest decline in this regard.
+
+```{r, eval=TRUE}
+marriage_line <- function(df, color_var, legend_label) {
+  df %>% 
+  ggplot(aes_string("year", "rate", color = color_var)) +
+    geom_line(size = 1.5) +
+    labs(title = "U.S. Marriage Rates", x = "Year", y = "Marriage Rate", color = legend_label)
+}
+
+marriage_line(by_div, "region", "Census Region")
+```
+
+Similarly, I think it would be interesting to see how the top 5 from 2000 have evolved over time. I do this by isolating a dataframe of just those states and performing a semi join to subset only the relevant data from the overall state-level dataframe.
+
+```{r, eval=TRUE}
+top_5_states <- by_state %>%
+  filter(year == 2000) %>%
+  arrange(desc(rate)) %>%
+  head(5)
+
+top_5_timeline <- by_state %>% semi_join(top_5_states, by = "state")
+```
+
+Visualizing this new subset, it's actually quite interesting to see that Nevada has experienced a significant decline in marriage rates since 1990. While our subset relied on performance in the year 2000, we can see this is a trend that has held true in Nevada for at least a decade prior.
+
+```{r, eval=TRUE}
+marriage_line(top_5_timeline, "state", "U.S. State")
+```
+
+For completeness, we can remove Nevada and see if something similar holds true for the other four states in question. We can confirm that with the exception of Hawaii, marriage rates in these states have also declined since the 1990s.
+
+```{r, eval=TRUE}
+marriage_line(top_5_timeline %>% filter(state != "Nevada"), "state", "U.S. State")
+```
+
+# Data Set #2: Video Game Sales
+
+This data set describes video game sales across major global sales regions in 2019.
+
+## Loading the data
+
+Loading this data is straightforward, just like the previous scenario.
+
+```{r, eval=TRUE}
+vg <- readr::read_csv(paste0(repo_loc, "vgsales.csv"))
+```
+
+## Subsetting and transforming the data
+
+The analysis in question centers around genre, ratings, platform and regional sales. I will also include year in this. In any case, this means that we can subset the original data. Further, we can create a multiple data frames: `games_df` to store the profile of a game as a single observation, `scores_df` where an observation is a game's rating, and `sales_df` where one observation will (eventually) represent a single regional sales figure.
+
+```{r, eval=TRUE}
+games_df <- vg %>% select(Rank, Name, Genre, Platform, Year)
+scores_df <- vg %>% select(Rank, Critic_Score, User_Score)
+sales_df <- vg %>% select(Rank, NA_Sales, PAL_Sales, JP_Sales, Other_Sales)
+```
+
+Now that those are set up, the main transformation required is to pivot the sales data. I also make the resultant categories in the `Region` dimension more readable. We see that we have introduced a lot of sparsity with this pivot, so I opt to filter out missing values. Imputation might be a decent strategy in other scenarios, but without anything to go on it does not fit well here. It also does not feel right to simply plug in the mean.
+
+```{r, eval=TRUE}
+sales_df <- sales_df %>% 
+  pivot_longer(-Rank, names_to = "Region", values_to = "Sales") %>% 
+  mutate_at("Region", ~ c("NA_Sales" = "North America", "PAL_Sales" = "Europe", "JP_Sales" = "Japan", "Other_Sales" = "Other")[.])
+
+mean(is.na(sales_df$Sales))
+sales_df <- sales_df %>% filter(!is.na(Sales))
+```
+
+## Analysis
+
+* compare genre sale across regions
+
+Using what sales figures we do have available, we can examine genre sales across regions. Conducting a left join, we can add `Genre` to `sales_df` from `games_df` and then do a group aggregation. Pivoting wide in this case then produces a presentable, readable table of the results.
+
+```{r, eval=TRUE}
+genre_sales <- sales_df %>%
+  left_join(select(games_df, Rank, Genre), by = "Rank") %>% 
+  group_aggregate(., c("Region", "Genre"), "Sales", sum)
+
+genre_sales %>% pivot_wider(id_cols = Genre, names_from = Region, values_from = Sales)
+
+```
+
+Similarly, we can look at platform sales across regions. In this case, we can limit ourselves to just games released since 2014 and that should greatly reduce the number of platforms involved and make the results more comprehensible.
+
+```{r, eval=TRUE}
+platform_sales <- sales_df %>%
+  left_join(select(games_df, Rank, Platform, Year), by = "Rank") %>% 
+  filter(Year >= 2014) %>% 
+  group_aggregate(., c("Region", "Platform"), "Sales", sum)
+
+platform_sales %>% pivot_wider(id_cols = Platform, names_from = Region, values_from = Sales)
+```
+
+It is still difficult to really get anything out of these tables - visualizing the data is likely the best thing to do. Doing so, we see some interesting things. Namely that in the available data, Japan accounted for all sales of GBA, PS2, PSP and Saturn games - all platforms that are long gone. PC gaming, my perferred gaming platform, seems to be the platform of choice in Europe.
+
+```{r, eval=TRUE}
+platform_sales %>%
+  ggplot(aes(Platform, Sales, fill = Region)) +
+  geom_col(position = "fill")
+
+```
+
+Similarly, going back to genre sales and applying the same visualization, we can more readily spot some trends. Board games, for example, seemed to have done really well in the European market whereas Visual Novels are consumed almost exclusively in Japan. Educational games are also almost exclusively purchased in the North American market during the time frame recorded in the data.  
+
+```{r, eval=TRUE}
+genre_sales %>%
+  ggplot(aes(Genre, Sales, fill = Region)) +
+  geom_col(position = "fill") + coord_flip()
+```
+
+# Data set #3: Crime in NYC Parks
+
+This data set describes the number of cases for various types of crimes reported within the NYC park system. The format was originally a table spanning across a multi-page PDF document.
+
+## Loading the data (and dropping total columns/rows)
+
+This data set is immediately more fun, because it does not already come in a typical tabular format like a CSV or Excel file.
+
+As a first step, I load the data from the PDF file via the `tabulizer` library. This sets up a list of matrixes for each page the data spans within the PDF.
+
+I create a function to convert the matrixes to tibbles/dataframes with the same naming convention: including some non-standard column names that I know will be converted into values for a character column later on. Creating and applying a function via `purrr::map` makes this series of operations more readable. Besides converting to a tibble/data frame, each result must have its first row and last column dropped entirely as these respresent the original column names and a total column respectively.
+
+The last step in this case is to drop the final row, which is a total row from the very end of the PDF.
+
+```{r, eval=TRUE}
+table_list <- tabulizer::extract_tables(paste0(repo_loc, "nyc-park-crime-stats-q4-2019.pdf"))
+better_columns <- c("park", "borough", "acreage", "parkCategory", "Murder", "Rape", "Robbery", "Felony Assault", "Burglary", "Grand Larceny", "Grand Larceny of a Vehicle")
+
+make_tibble <- function(matrix_object, column_names) {
+  tibble_result <- as_tibble(matrix_object[-1, -12], .name_repair = "minimal")
+  colnames(tibble_result) <- column_names
+  
+  return(tibble_result)
+}
+
+# I have loaded and combined all the paginated sections of the data below and removed the total column and total row at the ends.
+pdf_df <- purrr::map_dfr(table_list, make_tibble, column_names = better_columns)
+pdf_df <- pdf_df[-nrow(pdf_df), ]
+```
+
+## Cleaning the parks (data)
+
+In the spirit of creating the tidiest data possible, I will create two separate dataframes: one to contain park data and the other to contain crime data. The `park` column will the the primary key between them. Each observation of the `park_df` will represent a single NYC park and each observation of the `crime_df` will represent the number of cases for a specific type of crime within the NYC park system.
+
+First I create the `park_df`. I subset to maintain only the salient columns and make sure to keep only distinct rows. The `parkCategory` column contains only ten distinct text values, but it describes several different aspects of the park. Searching within this column for a set of simple sub-strings, I create five boolean columns representing whether the park has a basketball court, pool, playground, recreation center and is greater than or equal to an acre. From there, I drop the original column.
+
+```{r, eval=TRUE}
+# That means for the park dataframe, each observation is a single NYC park.
+park_df <- pdf_df %>%
+  select(park, borough, acreage, parkCategory) %>%
+  distinct()
+
+park_df <- park_df %>%
+  mutate(hasCourt = stringr::str_detect(parkCategory, "BASKETBALL"),
+         hasPool = stringr::str_detect(parkCategory, "POOL"),
+         hasPlayground = stringr::str_detect(parkCategory, "PLAYGROUND"),
+         hasCenter = stringr::str_detect(parkCategory, "CENTER"),
+         acrePlus = parkCategory == "ONE ACRE OR LARGER",
+         acreage = as.double(acreage)) %>% 
+  select(-parkCategory)
+```
+
+Next I make the `crime_df`. Again, after subsetting to only the salient columns I majorly restructure the data by pivoting the various crime-count columns into a longer format by creating a key-value pair of columns called `crimeCategory` and `cases`.
+
+```{r, eval=TRUE}
+crime_df <- pdf_df %>%
+  select(-borough, -acreage) %>%
+  pivot_longer(cols = -park, names_to = "crimeCategory", values_to = "cases") %>% 
+  mutate_at("cases", as.double)
+```
+
+The original data had `r nrow(pdf_df)` rows, most of which were filled with zeros. Now that the data is in a long format, I filter out all instances where `cases` equals zero or is empty (which in this case I am treating as a zero).
+
+```{r, eval=TRUE}
+old_size <- lobstr::obj_size(crime_df)
+
+crime_df <- crime_df %>% filter(cases != 0 & !is.na(cases))
+
+new_size <- lobstr::obj_size(crime_df)
+```
+
+We can see that this results in an object that takes up much less memory and is more expedient to work with. Having greatly reduced the size of the park component as well, we have gained some efficiency all around.
+
+```{r, eval=TRUE}
+old_size
+new_size
+```
+
+## Exploring the parks (data)
+
+* crimes by park
+
+From here, we can look at the types of crimes found in the NYC park system. We can observe that robbery and grand larceny are far and away the most common,
+
+```{r, eval=TRUE}
+group_aggregate(crime_df, "crimeCategory", "cases", sum) %>% arrange(desc(cases))
+```
+
+We can dive a bit deeper and look at the crime stats by location. Location, however, is definable in many different ways. Looking at the summary of park data below, we can see about a third of the parks are less than an acre in size. We can also see that the bottom 75% of them do not exceed 5 acres. Our greatest outlier in this all is Pelham Bay Park in the Bronx.
+
+```{r, eval=TRUE}
+summary(park_df)
+```
+
+I'd like, then, to look at crimes based on whether the park exceeds an acre or not and based on borough. I will join the relevant pieces of `park_df` to `crime_df`. Setting up a more presentational-format table below, we can see that there is nothing wholly suprising here - the less represented smaller parks contain fewer reported cases.
+
+```{r, eval=TRUE}
+boro_crime <- crime_df %>% left_join(select(park_df, park, borough, acrePlus), by = "park")
+
+group_aggregate(boro_crime, c("borough", "acrePlus"), "cases", sum) %>% 
+  pivot_wider(id_cols = acrePlus, names_from = borough, values_from = cases)
+
+```
+
+Comparing the parks across the five boroughs, we can evaluate if there are different patterns of criminality. We can observe that robberies occur in about equal measure across the five boroughs, save for a much lower reported incidence on Staten Island. Grand larceny, however, is much more common within Manhattan than the others.
+
+```{r, eval=TRUE}
+group_aggregate(boro_crime, c("borough", "crimeCategory"), "cases", sum) %>% 
+  pivot_wider(id_cols = borough, names_from = crimeCategory, values_from = cases)
+```
+
+Finally, to leave off with some practical (and potentially paranoia-inducing) knowledge, we can view the top 10 parks in the city when evaluated by the number of reported criminal cases.
+
+```{r, eval=TRUE}
+group_aggregate(crime_df, "park", "cases", sum) %>%
+  arrange(desc(cases)) %>%
+  head(10)
+```
+
+## Conclusion
+
+At this point, the various clean dataframe objects can be easily converted to CSV files via `readr::write_csv`. My greatest take away from this project is that once data is tidy, the techniques and means of operating on it to extract and communicate insights become standardized and follow similar logical patterns. To quote Leo Tolstoy, "All happy families are alike; each unhappy family is unhappy in its own way."
