@@ -14,7 +14,6 @@ library(tidyr)
 library(dplyr)
 
 repo_loc <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project2/"
-pc_loc <- "C:/Users/neapo/Desktop/School/DATA 607/Project 2/"
 ```
 
 # Intro
