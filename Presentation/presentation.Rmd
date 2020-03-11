@@ -1,0 +1,105 @@
+---
+title: "The purrr library"
+author: "Michael Munguia"
+date: "3/11/2020"
+output:
+  ioslides_presentation:
+    widescreen: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(purrr)
+library(dplyr)
+```
+
+
+## Typical iteration...
+
+```{r, echo=TRUE}
+times_two <- function(x) {x * 2}
+
+base_list <- list()
+
+for (i in seq_len(3)) {
+  base_list[[i]] <- times_two(i)
+}
+
+base_list
+```
+
+## ...replaced by `purrr::map`...
+
+```{r echo=TRUE}
+times_two <- function(x) {x * 2}
+purrr_list <- map(seq_len(3), times_two)
+
+purrr_list
+```
+
+## ...and less wordy anonymous functions.
+
+```{r echo=TRUE}
+purrr_list <- map(seq_len(3), ~ .x * 2)
+purrr_list
+```
+
+## We can also control for output type.
+
+```{r, echo=TRUE}
+purrr_dbl <- map_dbl(seq_len(3), ~ .x * 2)
+purrr_chr <- map_chr(seq_len(3), ~ .x * 2)
+```
+
+```{r, echo=TRUE}
+typeof(purrr_dbl)
+typeof(purrr_chr)
+```
+
+```{r, echo=TRUE, eval=FALSE}
+purrr_int <- map_int(seq_len(3), ~ .x * 2)
+# Error: Can't coerce element 1 from a double to a integer
+```
+
+## An example reading data.
+
+```{r, echo=TRUE}
+all_files <- dir()
+csv_files <- all_files[stringr::str_detect(all_files, "csv$")]
+```
+
+```{r, echo=TRUE, message=FALSE}
+df <- map_dfr(csv_files, readr::read_csv)
+df %>% head(3)
+```
+
+## An example manipulating it.
+
+```{r, echo=TRUE, message=FALSE}
+summarize_vowels <- function(df) {
+  filter(df, letter %in% c("A", "E", "I", "O", "U")) %>% 
+    summarize_at("value", mean)
+}
+
+df_list <- map(csv_files, readr::read_csv)
+(vowel_df <- map_dfr(df_list, summarize_vowels))
+```
+
+## And one last example with two inputs.
+```{r, echo=TRUE, message=FALSE}
+summarize_vowels <- function(df, file_name) {
+  filter(df, letter %in% c("A", "E", "I", "O", "U")) %>% 
+    summarize_at("value", mean) %>% 
+    mutate(file = file_name) %>% 
+    select(file, value)
+}
+
+df_list <- map(csv_files, readr::read_csv)
+(vowel_df <- map2_dfr(df_list, csv_files, summarize_vowels))
+```
+
+## Find out more!
+
+* *Advanced R* by Hadley Wickham
+* [purrr.tidyverse.org](purrr.tidyverse.org)
+* https://towardsdatascience.com/cleaner-r-code-with-functional-programming-adc37931ef7a
