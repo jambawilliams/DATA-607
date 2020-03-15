@@ -1,0 +1,81 @@
+---
+title: "Project 3"
+author: "Michael Munguia"
+date: "3/15/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytext)
+
+clean_description <- function(text) {
+  text <- text %>% 
+    iconv("", "ASCII", "byte") %>% 
+    str_remove_all("<.+>|\t|\\d|[:punct:]") %>% 
+    str_trim() %>% 
+    str_to_lower()
+  
+  return(text)
+}
+
+word_frequency <- function(df, addl_stopwords = NA) {
+  stop_words <- get_stopwords()
+  if (is.character(addl_stopwords)) {stop_words <- bind_rows(stop_words, tibble(word = addl_stopwords, lexicon = rep("user defined", length(addl_stopwords))))}
+      
+  df %>% 
+    anti_join(stop_words, by = "word") %>% 
+    count(word, sort = TRUE)
+}
+
+show_results <- function(df, addl_stopwords = NA, top_n = 10) {
+  top_df <- word_frequency(df, addl_stopwords) %>% head(top_n)
+  word_order <- top_df$word
+  top_df <- top_df %>% mutate_at("word", factor, ordered = TRUE, levels = word_order)
+  
+  result_plot <- ggplot(top_df, aes(word, n)) +
+    geom_col()
+  
+  if (top_n < 11) {
+    return(result_plot)
+  } else {
+    return(result_plot + coord_flip())
+  }
+  
+}
+
+# These are additional stopwords that appear to be noise in the greater scheme of what we're trying to do (i.e. extract meaningful words from job postings)
+jobpost_stopwords <- c("experience", "years", "accredited", "college", "degree", "field", "equivalent", "appropriate", "education", "specialization", "described", "year", "ability", "skills", "data", "strong", "work", "working", "well", "must",
+                       "candidate", "candidates", "university", "least", "community", "fulltime", "school", "andor", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "high", "level", "area", "related", "however",
+                       "satisfactory", "assignment", "public", "duties", "social", "activities", "centered", "responsible", "diploma", "period", "probationary", "substituted", "accrediting", "graduation", "recognized", "approved",
+                       "fouryear", "note", "required", "capacity", "department", "development", "organization", "states", "credits", "ii", "appointed", "appointments", "program", "position", "can", "combination", "may", "subject", "including",
+                       "semester", "appointment", "basis", "graduate", "acquired", "made", "major", "requirements", "use", "agencies", "areas", "bodies", "chea", "council", "estate", "following", "hire", "june", "meeting", "past", "real",
+                       "promotion", "primarily", "plus", "us", "using", "user", "valid", "additional", "august", "b", "c", "base", "eligible", "employee", "employment", "end", "fields", "fifteen", "general", "held", "paid", "possess", "prospective",
+                       "qualification", "recent", "winterspring", "within", "without", "yearforyear", "oror", "post", "agency", "city", "minimum", "months", "new", "york", "large", "highly", "desired", "able", "interest", "part", "etc", "strongly",
+                       "time", "prefer", "preference", "nyc", "environment", "excellent", "familiarity", "demonstrated", "computer",
+                       "administration", "administrative")
+
+```
+
+## NYC Job Postings
+
+After gathering the data through NYC Open Data, I tokenized the requirements and preferred skills sections of any data analyst/data scientist/data engineer positions listed and created a *Top N* style visualization (WIP).
+
+```{r, eval=TRUE}
+jobs <- read_csv("https://raw.githubusercontent.com/mijomu/DATA-607/master/Project%203/NYC_Jobs.csv") %>%
+  select("title" = `Business Title`, "category" = `Job Category`, "requirements" = `Minimum Qual Requirements`, "preferences" = `Preferred Skills`)
+
+data_jobs <- jobs %>%
+  filter(str_detect(title, regex("data", ignore_case = TRUE)) & str_detect(title, regex("analyst|scientist|engineer", ignore_case = TRUE))) %>%
+  mutate_at(c("requirements", "preferences"), clean_description)
+
+job_requirements <- data_jobs %>% unnest_tokens(word, requirements)
+job_preferences <- data_jobs %>% unnest_tokens(word, preferences)
+
+
+show_results(job_requirements, jobpost_stopwords, 20)
+show_results(job_preferences, jobpost_stopwords, 20)
+
+```
+
