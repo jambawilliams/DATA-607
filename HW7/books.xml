@@ -8,16 +8,16 @@
   
   <book>
     <Title>The Book of Five Rings</Title>
-    <Authorship>Miyamoto Musashi</Authorship>
-    <Year>1645</Year>
+    <Authorship>Miyamoto Musashi, Stephen F. Kaufman (Translator)</Authorship>
+    <Year>2004</Year>
     <Genre>Swordsmanship</Genre>
   </book>
   
   <book>
-    <Title>The Secret of the Golden Flower</Title>
-    <Authorship>Lu Dongbin translated by Thomas Cleary</Authorship>
-    <Year>9th Century</Year>
-    <Genre>Alchemy</Genre>
+    <Title>Hagakure</Title>
+    <Authorship>Yamamoto Tsunetomo, William Scott Wilson (Translator)</Authorship>
+    <Year>1979</Year>
+    <Genre>Philosphy</Genre>
   </book>
   
 </books>
