@@ -1,0 +1,23 @@
+<books>
+  <book>
+    <Title>Dune</Title>
+    <Authorship>Frank Herbert</Authorship>
+    <Year>1965</Year>
+    <Genre>Science Fiction</Genre>
+  </book>
+  
+  <book>
+    <Title>The Book of Five Rings</Title>
+    <Authorship>Miyamoto Musashi</Authorship>
+    <Year>1645</Year>
+    <Genre>Swordsmanship</Genre>
+  </book>
+  
+  <book>
+    <Title>The Secret of the Golden Flower</Title>
+    <Authorship>Lu Dongbin translated by Thomas Cleary</Authorship>
+    <Year>9th Century</Year>
+    <Genre>Alchemy</Genre>
+  </book>
+  
+</books>
