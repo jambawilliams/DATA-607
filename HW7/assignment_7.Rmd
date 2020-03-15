@@ -1,0 +1,70 @@
+---
+title: "Assignment # 7"
+author: "Michael Munguia"
+date: "3/12/2020"
+output: html_document
+---
+
+## Goal
+
+For this assignment, the goal was to load three different file types (HTML, JSON and XML) as data frames in R. The three files were created by me and hosted within the assignment's github repository. The files contain some data on *Dune*, *Book of Five Rings* and *Hagakure* - all content that explores syncretic buddhist thought among other things.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Function writing
+
+Because handling for each file is just a bit different, but based on the libraries I used and my degree of comfort at this stage with each, I created a function to standardize this part of the process. The `read_books` function detects the file extension and handles the situation accordingly.
+
+```{r, echo=TRUE}
+read_books <- function(filename) {
+  if (str_detect(filename, "html$")) {
+    result <- html_df <- xml2::read_html(filename) %>% 
+      rvest::html_table()
+    result <- result[[1]]
+  } else if (str_detect(filename, "json$")) {
+    result <- rjson::fromJSON(file = filename)
+    result <- bind_cols(result)
+  } else if (str_detect(filename, "xml$")) {
+    xml_result <- xml2::read_xml(filename)
+    xml_books <- xml2::xml_find_all(xml_result, "//book")
+    chr_list <- map(xml_books, ~ xml2::as_list(.x) %>% unlist())
+    
+    result <- tibble(Title = map_chr(chr_list, ~ .x["Title"]),
+                     Authorship = map_chr(chr_list, ~ .x["Authorship"]),
+                     Year = map_chr(chr_list, ~ .x["Year"]),
+                     Genre = map_chr(chr_list, ~ .x["Genre"]))
+  }
+  
+  return(result)
+}
+
+```
+
+## Loading data
+
+After compiling a vector of file locations, I pass them each to the function and display the results.
+
+```{r, echo=TRUE}
+book_file <- c("html" = "https://raw.githubusercontent.com/mijomu/DATA-607/master/HW7/books.html",
+               "json" = "https://raw.githubusercontent.com/mijomu/DATA-607/master/HW7/books.json",
+               "xml" = "https://raw.githubusercontent.com/mijomu/DATA-607/master/HW7/books.xml")
+```
+
+```{r, echo=TRUE}
+read_books(book_file["html"])
+```
+
+```{r, echo=TRUE}
+read_books(book_file["json"])
+```
+
+```{r, echo=TRUE}
+read_books(book_file["xml"])
+```
+
+# Conclusion
+
+Having loaded the files above, as created, they all result in the same shape of dataframe with one major difference being that the HTML file is alone in having the year data read as an integer once parsed through R. This could be controlled for by either modifying the original HTML (adding quotes around these values), by adding handling to what was written above or by opting for another library.
