@@ -3,14 +3,29 @@ title: "Project 3"
 author: "Michael Munguia"
 date: "3/15/2020"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
+params:
+  db_name:
+    label: Please enter the database name
+    value: ""
+  host:
+    label: Please enter the host address
+    value: ""
+  pwd:
+    input: password
+    label: Please enter your password
+    value: ""
+  user:
+    label: Please enter your username
+    value: ""
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 nyc_jobs <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project%203/NYC_Jobs.csv"
+vs_file <- "https://raw.githubusercontent.com/ferrysany/CUNY607P3/master/valuedSkills.csv"
 ```
 
 # Introduction
@@ -159,6 +174,34 @@ data_jobs <- data_jobs %>% distinct(title_id, category_id, requirements, prefere
 
 ```
 
+### Database interlude I
+
+Writing the tables above as CSV Files, normalized tables were created and populated via the PGAdmin 4 GUI. Alternatively, a backup file is included in ![this repository](https://github.com/mijomu/DATA-607/tree/master/Project%203). To load the data back into R, a process like below could be followed. For reproducibility, I maintained the dataframes created thus far, but if one were to instantiate the database via the backup file and load accordingly the results will be the same.:
+
+```{r, echo=TRUE, eval=FALSE}
+library(DBI)
+library(odbc)
+
+connection <- dbConnect(RPostgres::Postgres(), dbname = "project3",
+                        host = "localhost", user = "postgres", password = "password")
+
+
+connection <- dbConnect(RPostgres::Postgres(), dbname = params$db_name,
+                        host = params$host, user = params$user, password = params$pwd)
+
+read_db_tbl <- function(conx, select_statement) {
+  as.tbl(dbGetQuery(conn = conx, statement = select_statement))
+}
+
+title_table <- read_db_tbl(connection, "SELECT * FROM title_table")
+category_table <- read_db_tbl(connection, "SELECT * FROM category_table")
+
+job_requirements <- read_db_tbl(connection, "SELECT * FROM job_requirements")
+job_preferences <- read_db_tbl(connection, "SELECT * FROM job_preferences")
+
+```
+
+
 ### Analysis
 
 The top twenty most frequent words that appear in required job skills are below. More work is required here to adequately parse descriptions, but we can get a handle on the fact that most required skills revolve around having a more scientific background - words like research, biological, environmental and both masters and baccalaureate round out the top ten along with words like management and professional. We can glean from this that, at least as far as the city of New York is concerned, they are looking to hire data specialists with a higher degree of education than not. A research background in one of the sciences may give a potential applicant an edge over the competition.
@@ -175,10 +218,63 @@ word_plot(job_preferences, jobpost_stopwords, 20, title = "Preferred Job Skills"
 
 ```
 
-## Articles data.
+## Article Skill Lists
 
-Article data text, chunks, etc. goes here.
+Another avenue was collecting skills described by online articles set to highlight the most important data science skills. In this case, 10 articles were reviewed and data was manually collected into a CSV file. 
 
-## Conclusion
+### Data loading / Database Interlude II
 
-Conclusion text goes here.
+Again, for ease of reproducibility, the data will be read from a CSV file. In the comments, however, would be how to load the data given the same connection as before. The rest of the process remains the same.
+
+```{r, eval=TRUE, message=FALSE}
+skills <- read_csv(vs_file, skip=2)
+# skills <- read_db_tbl(connection, "SELECT * FROM valued_skills")
+```
+
+### Data wrangling
+
+The data is manipulated into a workable dataframe below.
+
+```{r, eval=TRUE}
+a<-max(str_count(skills$Skill, "\\s"))
+
+i=1
+newCol <- c(1)
+for(i in 1:(a+1)) {
+  newCol[i] <- as.character(i)
+}
+
+newSkills <- skills %>% 
+  separate(Skill, into = newCol, sep="\\s", fill="right")%>%
+  gather(key="nCol", value="nSkill", 2:9) %>%
+  mutate(nSkill = str_to_lower(nSkill)) %>%
+  mutate(nSkill = str_replace(nSkill, "[ ,?:]", "") ) %>%
+  filter(!is.na(nSkill)) %>%
+  arrange(desc(nSkill)) 
+
+# Machine and Learning are actually linked together after reviewing the csv file again
+
+gskills <- newSkills %>%
+  mutate(nSkill = if_else(nSkill %in% c("machine", "learning"), "machine learning", nSkill)) %>% 
+  group_by(nSkill)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))
+
+gskills
+```
+
+### Results
+
+The top five skills should be "Data" (including data analysis, data visualization, etc.), "Machine Learning", "Programming", "Communication" and "SQL".
+
+```{r}
+ggplot(data=(gskills[1:5,])) +
+  geom_col(mapping = aes(x = fct_reorder(nSkill, n), y = n)) +
+  coord_flip() +
+  labs(title = "Most Referenced Skills", x = "Frequency", y = "Job Skills")
+
+```
+
+# Conclusion
+
+Conclusion.
