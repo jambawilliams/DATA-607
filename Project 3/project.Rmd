@@ -40,7 +40,7 @@ The project goal was to gather and explore data revolving around the necessary j
 
 # Overall Process
 
-There was no single process for gathering the data, but we focused on two main sources of data: job postings from NYC's various government agencies and articles written about the important skills needed by a data scientist. The process for gathering data was two fold: mining job posts texts for commonalities across their required and preferred job skills and manual collection with the articles.
+There was no single process for gathering the data, but we focused on three main sources of data: job postings from NYC's various government agencies, articles written about the important skills needed by a data scientist and survey responses regarding data science working skills. The process for gathering data was two fold: mining data files for the job posts and survey results along with manual collection for the articles.
 
 # Data gathering & exploration
 
