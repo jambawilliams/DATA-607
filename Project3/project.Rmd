@@ -1,0 +1,280 @@
+---
+title: "Project 3"
+author: "Michael Munguia"
+date: "3/15/2020"
+output:
+  pdf_document: default
+  html_document: default
+params:
+  db_name:
+    label: Please enter the database name
+    value: ""
+  host:
+    label: Please enter the host address
+    value: ""
+  pwd:
+    input: password
+    label: Please enter your password
+    value: ""
+  user:
+    label: Please enter your username
+    value: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+nyc_jobs <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project%203/NYC_Jobs.csv"
+vs_file <- "https://raw.githubusercontent.com/ferrysany/CUNY607P3/master/valuedSkills.csv"
+```
+
+# Introduction
+
+The project goal was to gather and explore data revolving around the necessary job skills for a data scientist in today's job market. As a group, we discussed potential avenues for data collection via slack and based on availabilities and time constraints, executed the most readily accessible strategies. Unlike a real-world work scenario, we do not have most of our waking hours to dedicate to this, so we had to operate quickly and efficiently to deliver.
+
+# Overall Process
+
+There was no single process for gathering the data, but we focused on two main sources of data: job postings from NYC's various government agencies and articles written about the important skills needed by a data scientist. The process for gathering data was two fold: mining job posts texts for commonalities across their required and preferred job skills and manual collection with the articles.
+
+# Data gathering & exploration
+
+## NYC Open Data: Job Postings
+
+### Function writing
+
+Creating a few custom functions, the process for collecting and processing data from job descriptions posted onto the city's job post mechanism boiled down to reading a CSV and tokenizing the two columns dictating required and preferred skills such that we break each text document down into its constituent words. The text needed to be cleaned to standardize the words across descriptions such that artificially distinct words were not created as a result of things like special characters, punctuation, whitespace or capitalization. The cleaning process is managed by the `clean_description` function and tokenization was handled by the `tidytext::unnest_tokens` function. Once cleaned and tokenized, the text data was passed to the `word_frequency` function to remove any stop words, including a special list created by iteratively evaluating the results, and ultimately generate counts for each word in the overall corpus of description texts.
+
+```{r word-mining, eval=TRUE}
+library(tidytext)
+
+clean_description <- function(text) {
+  text <- text %>% 
+    iconv("", "ASCII", "byte") %>% 
+    str_remove_all("<.+>|\t|\\d|[:punct:]") %>% 
+    str_trim() %>% 
+    str_to_lower()
+  
+  return(text)
+}
+
+word_frequency <- function(df, addl_stopwords = NA) {
+  stop_words <- get_stopwords()
+  if (is.character(addl_stopwords)) {
+    stop_words <- bind_rows(stop_words,
+                            tibble(word = addl_stopwords,
+                                   lexicon = rep("user defined",
+                                                 length(addl_stopwords)
+                                   )
+                            )
+    )
+  }
+      
+  df %>% 
+    anti_join(stop_words, by = "word") %>% 
+    count(word, sort = TRUE)
+}
+
+unnest_wrapper <- function(df, target_var, word_var = "word") {
+  df %>%
+    unnest_tokens_(word_var, target_var) %>%
+    select(title_id, category_id, word)
+}
+
+
+word_plot <- function(df, addl_stopwords = NA, top_n = 10,
+                      title_lab = "Job Posting",
+                      x_lab = "Words in Text", y_lab = "Frequency",
+                      fill_color = "gray") {
+  top_df <- word_frequency(df, addl_stopwords) %>% head(top_n)
+  word_order <- top_df$word
+  top_df <- top_df %>% mutate_at("word", factor, ordered = TRUE, levels = word_order)
+  
+  result_plot <- ggplot(top_df, aes(word, n)) +
+    geom_col(fill = fill_color) +
+    labs(title = title_lab, x = x_lab, y = y_lab)
+  
+  if (top_n < 11) {
+    return(result_plot)
+  } else {
+    return(result_plot + coord_flip())
+  }
+  
+}
+
+# These are additional stopwords that appear to be noise in the greater scheme
+# of what we're trying to do (i.e. extract meaningful words from job postings)
+jobpost_stopwords <- c("experience", "years", "accredited", "college", "degree",
+                       "field", "equivalent", "appropriate", "education",
+                       "specialization", "described", "year", "ability",
+                       "skills", "data", "strong", "work", "working", "well",
+                       "must", "candidate", "candidates", "university", "least",
+                       "community", "fulltime", "school", "andor", "one", "two",
+                       "three", "four", "five", "six", "seven", "eight", "nine",
+                       "ten", "high", "level", "area", "related", "however",
+                       "satisfactory", "assignment", "public", "duties", "social",
+                       "activities", "centered", "responsible", "diploma", "period",
+                       "probationary", "substituted", "accrediting", "graduation",
+                       "recognized", "approved", "fouryear", "note", "required",
+                       "capacity", "department", "development", "organization",
+                       "states", "credits", "ii", "appointed", "appointments",
+                       "program", "position", "can", "combination", "may",
+                       "subject", "including", "semester", "appointment", "basis",
+                       "graduate", "acquired", "made", "major", "requirements",
+                       "use", "agencies", "areas", "bodies", "chea", "council",
+                       "estate", "following", "hire", "june", "meeting", "past",
+                       "real", "promotion", "primarily", "plus", "us", "using",
+                       "user", "valid", "additional", "august", "b", "c", "base",
+                       "eligible", "employee", "employment", "end", "fields",
+                       "fifteen", "general", "held", "paid", "possess",
+                       "prospective", "qualification", "recent", "winterspring",
+                       "within", "without", "yearforyear", "oror", "post", "agency",
+                       "city", "minimum", "months", "new", "york", "large", "highly",
+                       "desired", "able", "interest", "part", "etc", "strongly",
+                       "time", "prefer", "preference", "nyc", "environment",
+                       "excellent", "familiarity", "demonstrated", "computer",
+                       "administration", "administrative", "tasks", "student")
+
+```
+
+### Data wrangling
+
+After loading the `tidytext` library and defining my custom functions, the data is loaded and run through the process described above. Additionally, unique identifiers are created for both the job titles and categories listed in the job posts.
+
+```{r, eval=TRUE}
+jobs <- read_csv(nyc_jobs) %>%
+  select("title" = `Business Title`, "category" = `Job Category`,
+         "requirements" = `Minimum Qual Requirements`,
+         "preferences" = `Preferred Skills`)
+
+data_jobs <- jobs %>%
+  filter(str_detect(title, regex("data",ignore_case = TRUE)) &
+           str_detect(title, regex("analyst|scientist|engineer", ignore_case = TRUE))) %>%
+  mutate_at(c("requirements", "preferences"), clean_description)
+
+title_ids <- data_jobs %>% group_indices(title)
+category_ids <- data_jobs %>% group_indices(category)
+
+data_jobs$title_id <- title_ids
+data_jobs$category_id <- category_ids
+```
+
+### Putting it all together
+
+With unique identifiers in hand, separate dataframes are established for later normalized SQL table creation. In essence: `title_table` for job titles, `category_table` for departmental categories and `job_requirements` for required skills and `job_preferences` for preferred skills. The primary key linking these all will be the unique `title_id` and/or `category_id`. This leaves room open later on to further standardize the job titles such that departmental information could be extracted from the titles themselves if we eventually wanted to dissect job skills for data analysts versus data scientists, senior positions versus junior positions, etc.
+
+``` {r, eval=TRUE}
+(title_table <- data_jobs %>% distinct(title_id, title))
+(category_table <- data_jobs %>% distinct(category_id, category))
+
+data_jobs <- data_jobs %>% distinct(title_id, category_id, requirements, preferences)
+
+
+(job_requirements <- data_jobs %>% unnest_wrapper("requirements"))
+(job_preferences <- data_jobs %>% unnest_wrapper("preferences"))
+
+```
+
+### Database interlude I
+
+Writing the tables above as CSV Files, normalized tables were created and populated via the PGAdmin 4 GUI. Alternatively, a backup file is included in ![this repository](https://github.com/mijomu/DATA-607/tree/master/Project%203). To load the data back into R, a process like below could be followed. For reproducibility, I maintained the dataframes created thus far, but if one were to instantiate the database via the backup file and load accordingly the results will be the same.:
+
+```{r, echo=TRUE, eval=FALSE}
+library(DBI)
+library(odbc)
+
+connection <- dbConnect(RPostgres::Postgres(), dbname = "project3",
+                        host = "localhost", user = "postgres", password = "password")
+
+
+connection <- dbConnect(RPostgres::Postgres(), dbname = params$db_name,
+                        host = params$host, user = params$user, password = params$pwd)
+
+read_db_tbl <- function(conx, select_statement) {
+  as.tbl(dbGetQuery(conn = conx, statement = select_statement))
+}
+
+title_table <- read_db_tbl(connection, "SELECT * FROM title_table")
+category_table <- read_db_tbl(connection, "SELECT * FROM category_table")
+
+job_requirements <- read_db_tbl(connection, "SELECT * FROM job_requirements")
+job_preferences <- read_db_tbl(connection, "SELECT * FROM job_preferences")
+
+```
+
+
+### Analysis
+
+The top twenty most frequent words that appear in required job skills are below. More work is required here to adequately parse descriptions, but we can get a handle on the fact that most required skills revolve around having a more scientific background - words like research, biological, environmental and both masters and baccalaureate round out the top ten along with words like management and professional. We can glean from this that, at least as far as the city of New York is concerned, they are looking to hire data specialists with a higher degree of education than not. A research background in one of the sciences may give a potential applicant an edge over the competition.
+
+``` {r, eval=TRUE}
+word_plot(job_requirements, jobpost_stopwords, 20, title = "Required Job Skills", fill_color = "gray")
+```
+
+Likewise, we can see preferred job skills below. It is interesting to me that no language indicating any specific tools appears above, but we do see plenty of them below. Surprisingly, elements of the Microsoft Office suite are important: we see Excel appearing prominently as second most referenced word in preferred skills for these jobs. It is tied with a reference to "team", likely indicating being able to work on a team is highly valued along with the top preferred skill: communication. While a higher educational background may get one in the door, collaborative skills seem to be much more important. Certainly, we see references to analysis, software and (programming) languages but half of the top twenty refer to some kind of human-facing skill that we might not immediately think of in the wizardly world of data.
+
+``` {r, eval=TRUE}
+word_plot(job_preferences, jobpost_stopwords, 20, title = "Preferred Job Skills",
+          fill_color = "salmon")
+
+```
+
+## Article Skill Lists
+
+Another avenue was collecting skills described by online articles set to highlight the most important data science skills. In this case, 10 articles were reviewed and data was manually collected into a CSV file. 
+
+### Data loading / Database Interlude II
+
+Again, for ease of reproducibility, the data will be read from a CSV file. In the comments, however, would be how to load the data given the same connection as before. The rest of the process remains the same.
+
+```{r, eval=TRUE, message=FALSE}
+skills <- read_csv(vs_file, skip=2)
+# skills <- read_db_tbl(connection, "SELECT * FROM valued_skills")
+```
+
+### Data wrangling
+
+The data is manipulated into a workable dataframe below.
+
+```{r, eval=TRUE}
+a<-max(str_count(skills$Skill, "\\s"))
+
+i=1
+newCol <- c(1)
+for(i in 1:(a+1)) {
+  newCol[i] <- as.character(i)
+}
+
+newSkills <- skills %>% 
+  separate(Skill, into = newCol, sep="\\s", fill="right")%>%
+  gather(key="nCol", value="nSkill", 2:9) %>%
+  mutate(nSkill = str_to_lower(nSkill)) %>%
+  mutate(nSkill = str_replace(nSkill, "[ ,?:]", "") ) %>%
+  filter(!is.na(nSkill)) %>%
+  arrange(desc(nSkill)) 
+
+# Machine and Learning are actually linked together after reviewing the csv file again
+
+gskills <- newSkills %>%
+  mutate(nSkill = if_else(nSkill %in% c("machine", "learning"), "machine learning", nSkill)) %>% 
+  group_by(nSkill)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))
+
+gskills
+```
+
+### Results
+
+The top five skills should be "Data" (including data analysis, data visualization, etc.), "Machine Learning", "Programming", "Communication" and "SQL".
+
+```{r}
+ggplot(data=(gskills[1:5,])) +
+  geom_col(mapping = aes(x = fct_reorder(nSkill, n), y = n)) +
+  coord_flip() +
+  labs(title = "Most Referenced Skills", x = "Frequency", y = "Job Skills")
+
+```
+
+# Conclusion
+
+Conclusion.
