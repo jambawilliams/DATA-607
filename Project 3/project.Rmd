@@ -1,5 +1,5 @@
 ---
-title: "Project 3"
+title: "DATA 607: Project 3"
 author: "Michael Munguia, Keshaw Sahay, James Williams & Chunsan Yip"
 date: "3/22/2020"
 output:
