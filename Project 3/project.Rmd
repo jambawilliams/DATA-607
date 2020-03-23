@@ -23,11 +23,18 @@ params:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(dplyr)
+library(stringr)
+library(rvest)
 library(DT)
 library(kableExtra)
 library(reshape)
 library(grid)
 library(gridExtra)
+library("tm")
+library("SnowballC")
+library("RColorBrewer")
+library("wordcloud")
 
 nyc_jobs <- "https://raw.githubusercontent.com/mijomu/DATA-607/master/Project%203/NYC_Jobs.csv"
 vs_file <- "https://raw.githubusercontent.com/ferrysany/CUNY607P3/master/valuedSkills.csv"
@@ -463,6 +470,62 @@ theme(axis.text.x = element_text(angle = 65, hjust = 1),axis.text.y=element_blan
 
 The survery respondents used different learning platform and it appears that learners mostly benefited from personal projects as majority of resonse indicate it very useful. Online courses appears to be 2nd very useful only to be followed by StackOverflow and Kaggle. Blogs,textbooks and college also appear to be very userful whereas newsletters, podcasts and tradebook rank low. 
 
+# Indeed.com
+
+## Web Scrape Indeed.com for Data Scientist Job Vacancies
+For our fourth approach, we pulled the text from the summary of job vacancies for data scientist positions on Indeed.com to get a sense of what skills are most in demand for data science. 
+```{r}
+indeed <- data.frame(summary=character(),stringsAsFactors=FALSE) 
+for (i in seq(0, 990, 10)){
+  url <- paste0('https://www.indeed.com/jobs?q=data+scientist&l=all&start=',i)
+  file <- read_html(url)
+  #summary
+  summary <- file %>%
+    html_nodes('#resultsCol .summary') %>%
+    html_text() %>%
+    str_extract(".+")
+indeed <- rbind(indeed, as.data.frame(cbind(summary)))
+}
+```
+## Transform Data
+Change file format from a data frame into a text file that will work with TM.
+```{r}
+# data <- write.table(file, file = 'indeed.txt', sep = ",")
+file <- "https://raw.githubusercontent.com/jambawilliams/DATA607Project3/master/indeed.txt"
+text <- readLines(file)
+docs <- Corpus(VectorSource(text))
+```
+## Condition Data
+Remove spaces, non-skill words, and punctuation from extracted text.
+```{r}
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+docs <- tm_map(docs, content_transformer(tolower))
+docs <- tm_map(docs, removeNumbers)
+docs <- tm_map(docs, removeWords, stopwords("english"))
+docs <- tm_map(docs, removeWords, c("data", "experience", "science", "predictive", "will", "including", "machine", "analytics", "technique", "advanced", "team", "understanding", "tools", "deep", "techniques", "decision", "work", "engineering", "forests", "modern", "trees", "glms", "years", "boosted...", "variety", "boosted", "seen", "software", "roles", "models", "closely", "statistical", "senior", "experts", "working", "engineer", "leverage", "learning", "scientific", "project", "domain", "scientists", "iquartic", "ocr", "use", "one", "etc", "insights", "scientist", "trends"))
+docs <- tm_map(docs, removePunctuation)
+docs <- tm_map(docs, stripWhitespace)
+dtm <- TermDocumentMatrix(docs)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m), decreasing = TRUE)
+d <- data.frame(word = names(v), freq=v)
+d
+```
+## Visualize Data
+By visualizing the relative frequency of skills listed in job summaries we can see which are more commonly mentioned in job postings online.  Python appears to be the number one skill in demand in this dataset.
+
+```{r}
+set.seed(1234)
+wordcloud(words = d$word, freq=d$freq, min.freq = 50, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+```
+```{r}
+barplot(d[1:10,]$freq, las = 2, names.arg = d[1:10,]$word,
+        col ="lightblue", main ="Most frequent words",
+        ylab = "Word frequencies")
+```
 # Conclusion
 
 Based on the different approaches taken by our team, we have seen a variety of different skill sets that are important for a data scientist to acquire and develop. While "soft-skills" like the ability to communicate clearly and navigate working in a collaborative environment are extremely in demand, they must be coupled with that "hard-skills" we are all familiar with: programming, data modeling, etc. In pursuit of this, there are a myriad of sources from which to draw from in becoming a more able practitioner of data science, though perhaps there is no better teacher than personal practice in the form of engaging personal projects and online learning.
